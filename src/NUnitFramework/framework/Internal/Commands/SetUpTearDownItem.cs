@@ -29,26 +29,27 @@ using NUnit.Framework.Interfaces;
 
 namespace NUnit.Framework.Internal.Commands
 {
-    public enum MethodType
-    {
-        SetUp,
-        TearDown
-    }
-
     public class SetupOrTearDown : TestMethod
     {
+        public enum MethodType
+        {
+            SetUp,
+            TearDown
+        }
+
+        private string _testType;
+
         public SetupOrTearDown(IMethodInfo method, MethodType type) : this(method, null, type)
         {
         }
 
-        public SetupOrTearDown(IMethodInfo method, Test parentSuite, MethodType type) : base(method, parentSuite)
+        public SetupOrTearDown(IMethodInfo method, Test testCase, MethodType type) : base(method, testCase)
         {
+            this.Parent = testCase;
             this._testType = type.ToString();
         }
 
-        private string _testType;
         public override string TestType => _testType;
-
     }
 
     /// <summary>
@@ -94,7 +95,7 @@ namespace NUnit.Framework.Internal.Commands
             {
                 IMethodInfo methodInfo = new MethodWrapper(typeof(int), _setUpMethods[0]);
 
-                var test = new SetupOrTearDown(methodInfo, context.CurrentTest, MethodType.SetUp);
+                var test = new SetupOrTearDown(methodInfo, context.CurrentTest, SetupOrTearDown.MethodType.SetUp);
                 context.Listener.TestStarted(test);
                 context.CurrentTest = test;
 
@@ -114,21 +115,13 @@ namespace NUnit.Framework.Internal.Commands
         /// <param name="context"></param>
         public void RunTearDown(TestExecutionContext context)
         {
-            // As of NUnit 3.0, we will only run teardown at a given
-            // inheritance level if we actually ran setup at that level.
             var originalTest = context.CurrentTest;
 
+            // As of NUnit 3.0, we will only run teardown at a given
+            // inheritance level if we actually ran setup at that level.
             if (_setUpWasRun)
                 try
                 {
-                    TestMethod test = null;
-                    if (_tearDownMethods.Any())
-                    {
-                        IMethodInfo methodInfo = new MethodWrapper(typeof(int), _tearDownMethods[0]);
-                        test = new SetupOrTearDown(methodInfo, context.CurrentTest, MethodType.TearDown);
-                        context.Listener.TestStarted(test);
-                    }
-
                     // Count of assertion results so far
                     var oldCount = context.CurrentResult.AssertionResults.Count;
 
@@ -137,8 +130,13 @@ namespace NUnit.Framework.Internal.Commands
                     int index = _tearDownMethods.Count;
                     while (--index >= 0)
                     {
+                        IMethodInfo methodInfo = new MethodWrapper(typeof(int), _tearDownMethods[0]);
+                        var test = new SetupOrTearDown(methodInfo, context.CurrentTest, SetupOrTearDown.MethodType.TearDown);
+                        context.Listener.TestStarted(test);
                         context.CurrentTest = test;
+
                         RunSetUpOrTearDownMethod(context, _tearDownMethods[index]);
+
                         var result = test.MakeTestResult();
                         result.SetResult(ResultState.Success);
                         context.Listener.TestFinished(result);
