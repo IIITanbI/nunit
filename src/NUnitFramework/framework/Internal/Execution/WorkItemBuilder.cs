@@ -21,12 +21,49 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ***********************************************************************
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using System.Threading;
 using NUnit.Framework.Interfaces;
 
 namespace NUnit.Framework.Internal.Execution
 {
+    public class SetupOrTearDown : TestMethod
+    {
+        public enum MethodType
+        {
+            SetUp,
+            TearDown
+        }
+
+        private string _testType;
+
+        public SetupOrTearDown(IMethodInfo method, MethodType type) : this(method, null, type)
+        {
+        }
+
+        public SetupOrTearDown(IMethodInfo method, Test testCase, MethodType type) : base(method, testCase)
+        {
+            this.Parent = testCase;
+            this._testType = type.ToString();
+        }
+
+        public override string TestType => _testType;
+    }
+
+    public class MyWorker : CompositeWorkItem
+    {
+        public MyWorker(TestSuite suite, ITestFilter childFilter) : base(suite, childFilter) { }
+
+        protected override void PerformWork()
+        {
+            Console.WriteLine();
+            base.PerformWork();
+        }
+    }
+
     /// <summary>
     /// WorkItemBuilder class knows how to build a tree of work items from a tree of tests
     /// </summary>
@@ -45,7 +82,57 @@ namespace NUnit.Framework.Internal.Execution
         {
             TestSuite suite = test as TestSuite;
             if (suite == null)
-                return new SimpleWorkItem((TestMethod)test, filter);
+            {
+                TestFixture parentFixture = test.Parent as TestFixture ?? test.Parent?.Parent as TestFixture;
+                if (parentFixture == null)
+                {
+                    return new SimpleWorkItem((TestMethod)test, filter);
+                }
+
+                // In normal operation we should always get the methods from the parent fixture.
+                // However, some of NUnit's own tests can create a TestMethod without a parent 
+                // fixture. Most likely, we should stop doing this, but it affects 100s of cases.
+
+                var setUpMethods = parentFixture.SetUpMethods;
+                var tearDownMethods = parentFixture.TearDownMethods;
+
+                if (setUpMethods.Any() || tearDownMethods.Any())
+                {
+                    var testSuite = new TestSuite(test.Parent.FullName, test.Name)
+                    {
+                        Parent = test.Parent,
+                    };
+                    var attr = new NonParallelizableAttribute();
+                    attr.ApplyToTest(testSuite);
+
+                    foreach (var setupMethod in setUpMethods)
+                    {
+                        var setup = new SetupOrTearDown(new MethodWrapper(typeof(int), setupMethod), testSuite, SetupOrTearDown.MethodType.SetUp);
+                        testSuite.Tests.Add(setup);
+                    }
+
+                    ((TestMethod)test).Parent = testSuite;
+                    testSuite.Tests.Add(test);
+                    foreach (var tearDownMethod in tearDownMethods)
+                    {
+                        var tearDown = new SetupOrTearDown(new MethodWrapper(typeof(int), tearDownMethod), testSuite, SetupOrTearDown.MethodType.TearDown);
+                        testSuite.Tests.Add(tearDown);
+                    }
+
+                    testSuite.Tests.ToList().ForEach(t => new NonParallelizableAttribute().ApplyToTest((Test)t));
+                    // public MethodInfo[] SetUpMethods { get; protected set; }
+                    //var prop = parentFixture.GetType().GetProperty(nameof(parentFixture.SetUpMethods), BindingFlags.Instance | BindingFlags.Public);
+                    //prop.SetValue(parentFixture, new MethodInfo[0], null);
+
+                    //var prop1 = parentFixture.GetType().GetProperty(nameof(parentFixture.TearDownMethods), BindingFlags.Instance | BindingFlags.Public);
+                    //prop1.SetValue(parentFixture, new MethodInfo[0], null);
+                    suite = testSuite;
+                }
+                else
+                {
+                    return new SimpleWorkItem((TestMethod)test, filter);
+                }
+            }
 
             var work = new CompositeWorkItem(suite, filter);
 

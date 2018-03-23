@@ -43,7 +43,7 @@ namespace NUnit.Framework.Internal.Execution
         /// </summary>
         /// <param name="test">The test to be executed</param>
         /// <param name="filter">The filter used to select this test</param>
-        public SimpleWorkItem(TestMethod test, ITestFilter filter) 
+        public SimpleWorkItem(TestMethod test, ITestFilter filter)
             : base(test, filter)
         {
             _testMethod = test;
@@ -111,13 +111,13 @@ namespace NUnit.Framework.Internal.Execution
                 // In normal operation we should always get the methods from the parent fixture.
                 // However, some of NUnit's own tests can create a TestMethod without a parent 
                 // fixture. Most likely, we should stop doing this, but it affects 100s of cases.
-                var setUpMethods = parentFixture?.SetUpMethods ?? Reflect.GetMethodsWithAttribute(Test.TypeInfo.Type, typeof(SetUpAttribute), true);
-                var tearDownMethods = parentFixture?.TearDownMethods ?? Reflect.GetMethodsWithAttribute(Test.TypeInfo.Type, typeof(TearDownAttribute), true);
-
+                var setUpMethods = parentFixture?.SetUpMethods;// ?? Reflect.GetMethodsWithAttribute(Test.TypeInfo.Type, typeof(SetUpAttribute), true);
+                var tearDownMethods = parentFixture?.TearDownMethods;// ?? Reflect.GetMethodsWithAttribute(Test.TypeInfo.Type, typeof(TearDownAttribute), true);
+                
                 // Wrap in SetUpTearDownCommands
-                var setUpTearDownList = BuildSetUpTearDownList(setUpMethods, tearDownMethods);
-                foreach (var item in setUpTearDownList)
-                    command = new SetUpTearDownCommand(command, item);
+               // var setUpTearDownList = BuildSetUpTearDownList(setUpMethods, tearDownMethods);
+                //foreach (var item in setUpTearDownList)
+                //    command = new SetUpTearDownCommand(command, item);
 
                 // In the current implementation, upstream actions only apply to tests. If that should change in the future,
                 // then actions would have to be tested for here. For now we simply assert it in Debug. We allow 
@@ -161,5 +161,41 @@ namespace NUnit.Framework.Internal.Execution
                 return new SkipCommand(_testMethod);
             }
         }
+    }
+
+    public class MyWorkItem : SimpleWorkItem
+    {
+        public MyWorkItem(TestMethod test, ITestFilter filter) : base(test, filter)
+        {
+
+        }
+
+        //        protected override void PerformWork()
+        //        {
+        //            try
+        //            {
+        //                Result = MakeTestCommand().Execute(Context);
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                // Currently, if there are no command wrappers, test 
+        //                // actions, setup or teardown, we have to catch any
+        //                // exception from the test here. In addition, since
+        //                // users may create their own command wrappers, etc.
+        //                // we have to protect against unhandled exceptions.
+
+        //#if !NETSTANDARD1_6
+        //                if (ex is ThreadAbortException)
+        //                    Thread.ResetAbort();
+        //#endif
+
+        //                Context.CurrentResult.RecordException(ex);
+        //                Result = Context.CurrentResult;
+        //            }
+        //            finally
+        //            {
+        //                WorkItemComplete();
+        //            }
+        //        }
     }
 }
