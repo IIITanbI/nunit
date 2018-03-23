@@ -23,10 +23,34 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using NUnit.Framework.Interfaces;
 
 namespace NUnit.Framework.Internal.Commands
 {
+    public enum MethodType
+    {
+        SetUp,
+        TearDown
+    }
+
+    public class SetupOrTearDown : TestMethod
+    {
+        public SetupOrTearDown(IMethodInfo method, MethodType type) : this(method, null, type)
+        {
+        }
+
+        public SetupOrTearDown(IMethodInfo method, Test parentSuite, MethodType type) : base(method, parentSuite)
+        {
+            this._testType = type.ToString();
+        }
+
+        private string _testType;
+        public override string TestType => _testType;
+
+    }
+
     /// <summary>
     /// SetUpTearDownItem holds the setup and teardown methods
     /// for a single level of the inheritance hierarchy.
@@ -64,9 +88,24 @@ namespace NUnit.Framework.Internal.Commands
         public void RunSetUp(TestExecutionContext context)
         {
             _setUpWasRun = true;
+            var originalTest = context.CurrentTest;
 
             foreach (MethodInfo setUpMethod in _setUpMethods)
+            {
+                IMethodInfo methodInfo = new MethodWrapper(typeof(int), _setUpMethods[0]);
+
+                var test = new SetupOrTearDown(methodInfo, context.CurrentTest, MethodType.SetUp);
+                context.Listener.TestStarted(test);
+                context.CurrentTest = test;
+
                 RunSetUpOrTearDownMethod(context, setUpMethod);
+
+                var result = test.MakeTestResult();
+                result.SetResult(ResultState.Success);
+                context.Listener.TestFinished(result);
+            }
+
+            context.CurrentTest = originalTest;
         }
 
         /// <summary>
@@ -77,9 +116,19 @@ namespace NUnit.Framework.Internal.Commands
         {
             // As of NUnit 3.0, we will only run teardown at a given
             // inheritance level if we actually ran setup at that level.
+            var originalTest = context.CurrentTest;
+
             if (_setUpWasRun)
                 try
                 {
+                    TestMethod test = null;
+                    if (_tearDownMethods.Any())
+                    {
+                        IMethodInfo methodInfo = new MethodWrapper(typeof(int), _tearDownMethods[0]);
+                        test = new SetupOrTearDown(methodInfo, context.CurrentTest, MethodType.TearDown);
+                        context.Listener.TestStarted(test);
+                    }
+
                     // Count of assertion results so far
                     var oldCount = context.CurrentResult.AssertionResults.Count;
 
@@ -87,7 +136,13 @@ namespace NUnit.Framework.Internal.Commands
                     // run the teardowns in reverse order to provide consistency.
                     int index = _tearDownMethods.Count;
                     while (--index >= 0)
+                    {
+                        context.CurrentTest = test;
                         RunSetUpOrTearDownMethod(context, _tearDownMethods[index]);
+                        var result = test.MakeTestResult();
+                        result.SetResult(ResultState.Success);
+                        context.Listener.TestFinished(result);
+                    }
 
                     // If there are new assertion results here, they are warnings issued
                     // in teardown. Redo test completion so they are listed properly.
@@ -98,6 +153,8 @@ namespace NUnit.Framework.Internal.Commands
                 {
                     context.CurrentResult.RecordTearDownException(ex);
                 }
+
+            context.CurrentTest = originalTest;
         }
 
         private void RunSetUpOrTearDownMethod(TestExecutionContext context, MethodInfo method)
@@ -107,7 +164,7 @@ namespace NUnit.Framework.Internal.Commands
                 RunAsyncMethod(method, context);
             else
 #endif
-                RunNonAsyncMethod(method, context);
+            RunNonAsyncMethod(method, context);
         }
 
 #if ASYNC
