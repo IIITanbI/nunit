@@ -53,17 +53,6 @@ namespace NUnit.Framework.Internal.Execution
         public override string TestType => _testType;
     }
 
-    public class MyWorker : CompositeWorkItem
-    {
-        public MyWorker(TestSuite suite, ITestFilter childFilter) : base(suite, childFilter) { }
-
-        protected override void PerformWork()
-        {
-            Console.WriteLine();
-            base.PerformWork();
-        }
-    }
-
     /// <summary>
     /// WorkItemBuilder class knows how to build a tree of work items from a tree of tests
     /// </summary>
@@ -81,12 +70,16 @@ namespace NUnit.Framework.Internal.Execution
         static public WorkItem CreateWorkItem(ITest test, ITestFilter filter, bool recursive = false)
         {
             TestSuite suite = test as TestSuite;
+            CompositeWorkItem work;
+            bool isOneTest = false;
+
             if (suite == null)
             {
+                var testMethod = (TestMethod)test;
                 TestFixture parentFixture = test.Parent as TestFixture ?? test.Parent?.Parent as TestFixture;
                 if (parentFixture == null)
                 {
-                    return new SimpleWorkItem((TestMethod)test, filter);
+                    return new SimpleWorkItem(testMethod, filter);
                 }
 
                 // In normal operation we should always get the methods from the parent fixture.
@@ -98,43 +91,34 @@ namespace NUnit.Framework.Internal.Execution
 
                 if (setUpMethods.Any() || tearDownMethods.Any())
                 {
-                    var testSuite = new TestSuite(test.Parent.FullName, test.Name)
+                    suite = new TestSuite(test.Parent.FullName, test.Name)
                     {
                         Parent = test.Parent,
                     };
-                    var attr = new NonParallelizableAttribute();
-                    attr.ApplyToTest(testSuite);
 
                     foreach (var setupMethod in setUpMethods)
                     {
-                        var setup = new SetupOrTearDown(new MethodWrapper(typeof(int), setupMethod), testSuite, SetupOrTearDown.MethodType.SetUp);
-                        testSuite.Tests.Add(setup);
+                        var setup = new SetupOrTearDown(new MethodWrapper(typeof(int), setupMethod), suite, SetupOrTearDown.MethodType.SetUp);
+                        suite.Tests.Add(setup);
                     }
 
-                    ((TestMethod)test).Parent = testSuite;
-                    testSuite.Tests.Add(test);
+                    testMethod.Parent = suite;
+                    suite.Tests.Add(test);
                     foreach (var tearDownMethod in tearDownMethods)
                     {
-                        var tearDown = new SetupOrTearDown(new MethodWrapper(typeof(int), tearDownMethod), testSuite, SetupOrTearDown.MethodType.TearDown);
-                        testSuite.Tests.Add(tearDown);
+                        var tearDown = new SetupOrTearDown(new MethodWrapper(typeof(int), tearDownMethod), suite, SetupOrTearDown.MethodType.TearDown);
+                        suite.Tests.Add(tearDown);
                     }
 
-                    testSuite.Tests.ToList().ForEach(t => new NonParallelizableAttribute().ApplyToTest((Test)t));
-                    // public MethodInfo[] SetUpMethods { get; protected set; }
-                    //var prop = parentFixture.GetType().GetProperty(nameof(parentFixture.SetUpMethods), BindingFlags.Instance | BindingFlags.Public);
-                    //prop.SetValue(parentFixture, new MethodInfo[0], null);
-
-                    //var prop1 = parentFixture.GetType().GetProperty(nameof(parentFixture.TearDownMethods), BindingFlags.Instance | BindingFlags.Public);
-                    //prop1.SetValue(parentFixture, new MethodInfo[0], null);
-                    suite = testSuite;
+                    isOneTest = true;
                 }
                 else
                 {
-                    return new SimpleWorkItem((TestMethod)test, filter);
+                    return new SimpleWorkItem(testMethod, filter);
                 }
             }
 
-            var work = new CompositeWorkItem(suite, filter);
+            work = new CompositeWorkItem(suite, filter) { IsOneTest = isOneTest };
 
             if (recursive)
             {

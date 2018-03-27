@@ -39,6 +39,7 @@ namespace NUnit.Framework.Internal.Execution
     public class CompositeWorkItem : WorkItem
     {
         //        static Logger log = InternalTrace.GetLogger("CompositeWorkItem");
+        public bool IsOneTest { get; set; }
 
         private TestSuite _suite;
         private TestSuiteResult _suiteResult;
@@ -279,8 +280,18 @@ namespace NUnit.Framework.Internal.Execution
 
             _childTestCountdown = new CountdownEvent(childCount);
 
+            bool failOther = false;
             foreach (WorkItem child in Children)
             {
+                if (failOther)
+                {
+                    Context.Listener.TestStarted(child.Test);
+                    var result = child.Test.MakeTestResult();
+                    result.SetResult(ResultState.Ignored); ;
+                    Context.Listener.TestFinished(result);
+                    continue;
+                }
+
                 if (CheckForCancellation())
                     break;
 
@@ -292,7 +303,18 @@ namespace NUnit.Framework.Internal.Execution
                 child.TestWorker = TestWorker;
 #endif
 
+                if (this.IsOneTest)
+                {
+                    child.Context.IsSingleThreaded = true;
+                }
                 Context.Dispatcher.Dispatch(child);
+                if (this.IsOneTest)
+                {
+                    if (child.Result.ResultState.Status != TestStatus.Passed)
+                    {
+                        failOther = true;
+                    }
+                }
                 childCount--;
             }
 
