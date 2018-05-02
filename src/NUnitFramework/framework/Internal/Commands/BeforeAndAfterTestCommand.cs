@@ -1,4 +1,4 @@
-﻿// ***********************************************************************
+// ***********************************************************************
 // Copyright (c) 2014 Charlie Poole, Rob Prouse
 //
 // Permission is hereby granted, free of charge, to any person obtaining
@@ -23,6 +23,7 @@
 
 using System;
 using System.Threading;
+using NUnit.Framework.Interfaces;
 
 namespace NUnit.Framework.Internal.Commands
 {
@@ -54,9 +55,31 @@ namespace NUnit.Framework.Internal.Commands
 
             try
             {
-                BeforeTest(context);
+                Exception _ex = null;
+                try
+                {
+                    BeforeTest(context);
+                }
+                catch (Exception ex)
+                {
+                    _ex = ex;
+                }
 
-                context.CurrentResult = innerCommand.Execute(context);
+                if (_ex != null)
+                {
+                    context.Listener.TestStarted(this.Test);
+                    context.CurrentResult.SetResult(ResultState.Failure);
+                }
+                else
+                {
+                    if (innerCommand is TestMethodCommand)
+                    {
+                        context.Listener.TestStarted(this.Test);
+                    }
+
+                    context.CurrentTest = this.Test;
+                    context.CurrentResult = innerCommand.Execute(context);
+                }
             }
             catch (Exception ex)
             {
@@ -72,9 +95,10 @@ namespace NUnit.Framework.Internal.Commands
                     AfterTest(context);
             }
 
+            context.CurrentTest = this.Test;
             return context.CurrentResult;
         }
-        
+
         /// <summary>
         /// Perform the before test action
         /// </summary>

@@ -89,24 +89,29 @@ namespace NUnit.Framework.Internal.Commands
         public void RunSetUp(TestExecutionContext context)
         {
             _setUpWasRun = true;
-            var originalTest = context.CurrentTest;
 
             foreach (MethodInfo setUpMethod in _setUpMethods)
             {
-                IMethodInfo methodInfo = new MethodWrapper(typeof(int), _setUpMethods[0]);
+                IMethodInfo methodInfo = new MethodWrapper(typeof(int), setUpMethod);
 
                 var test = new SetupOrTearDown(methodInfo, context.CurrentTest, SetupOrTearDown.MethodType.SetUp);
                 context.Listener.TestStarted(test);
                 context.CurrentTest = test;
 
-                RunSetUpOrTearDownMethod(context, setUpMethod);
-
                 var result = test.MakeTestResult();
-                result.SetResult(ResultState.Success);
-                context.Listener.TestFinished(result);
+                try
+                {
+                    RunSetUpOrTearDownMethod(context, setUpMethod);
+                    result.SetResult(ResultState.Success);
+                    context.Listener.TestFinished(result);
+                }
+                catch (Exception ex)
+                {
+                    result.RecordException(ex);
+                    context.Listener.TestFinished(result);
+                    throw;
+                }
             }
-
-            context.CurrentTest = originalTest;
         }
 
         /// <summary>
@@ -115,8 +120,6 @@ namespace NUnit.Framework.Internal.Commands
         /// <param name="context"></param>
         public void RunTearDown(TestExecutionContext context)
         {
-            var originalTest = context.CurrentTest;
-
             // As of NUnit 3.0, we will only run teardown at a given
             // inheritance level if we actually ran setup at that level.
             if (_setUpWasRun)
@@ -151,8 +154,6 @@ namespace NUnit.Framework.Internal.Commands
                 {
                     context.CurrentResult.RecordTearDownException(ex);
                 }
-
-            context.CurrentTest = originalTest;
         }
 
         private void RunSetUpOrTearDownMethod(TestExecutionContext context, MethodInfo method)

@@ -495,7 +495,8 @@ namespace NUnit.Framework.Internal.Execution
         {
             Context.CurrentTest = this.Test;
             Context.CurrentResult = this.Result;
-            Context.Listener.TestStarted(this.Test);
+            if (!(this.Test is TestMethod))
+                Context.Listener.TestStarted(this.Test);
             Context.StartTime = DateTime.UtcNow;
             Context.StartTicks = Stopwatch.GetTimestamp();
 #if PARALLEL
